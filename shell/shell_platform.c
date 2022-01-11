@@ -4,16 +4,16 @@
     DESCRIPTION: OEM commands including gpio, i2c_slave relative function access.
     AUTHOR: MouchenHung
     DATE/VERSION: 2022.01.11 - v1.0.0
-    Note: 
+    Note:
     (1) User command table 
-          [topic]               [description]				[support] 	[command]
-        * GPIO												O
-            * List group		List gpios in group			o			platform gpio list_group <gpio_device>
-            * List all			List all gpios				o			platform gpio list_all
-            * Get				Get one gpio				o			platform gpio get <gpio_num>
-            * Set value			Set one gpio value			o			platform gpio set val <gpio_num> <value>
-            * Set direction		Set one gpio direction		x			platform gpio set dir <gpio_num> <value>
-        * I2C SLAVE											X
+          [topic]               [description]               [support]   [command]
+        * GPIO                                              O
+            * List group        List gpios in group         o           platform gpio list_group <gpio_device>
+            * List all          List all gpios              o           platform gpio list_all
+            * Get               Get one gpio                o           platform gpio get <gpio_num>
+            * Set value         Set one gpio value          o           platform gpio set val <gpio_num> <value>
+            * Set direction     Set one gpio direction      x           platform gpio set dir <gpio_num> <value>
+        * I2C SLAVE                                         X
 
     (2) Some hard code features need to be modified if CHIP is different
 
