@@ -5,14 +5,21 @@ Platform command with zephyr
   - Get all gpios' info\
     **platform gpio list_all**\
     ![alt text](./img/GPIO_listall.png "gpio list all")
+    
   - Get all gpios' info in one group\
-    **platform gpio list_group <gpio_group_name>**
+    **platform gpio list_group <gpio_group_name>**\
+    ![alt text](./img/GPIO_listgroup.png "gpio list group")
+    
   - Get one gpio info\
-    **platform gpio get <gpio_num>**
+    **platform gpio get <gpio_num>**\
+    
   - Set one gpio's value\
-    **platform gpio set val <gpio_num> <0/1>**
+    **platform gpio set val <gpio_num> <0/1>**\
+    ![alt text](./img/GPIO_getset.png "gpio get/set")
+    
   - Set one gpio's direction(not support!)\
     **platform gpio set dir <gpio_num> <0/1>**
+    
 - I2C relative\
   Not support!
   
