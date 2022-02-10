@@ -11,7 +11,7 @@ Platform command with zephyr
     ![alt text](./img/GPIO_listgroup.png "gpio list group")
     
   - Get one gpio info\
-    **platform gpio get <gpio_num>**\
+    **platform gpio get <gpio_num>**
     
   - Set one gpio's value\
     **platform gpio set val <gpio_num> <0/1>**\
