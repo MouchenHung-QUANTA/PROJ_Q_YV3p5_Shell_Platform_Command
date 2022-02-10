@@ -12,7 +12,7 @@ Platform command with zephyr
     **platform gpio set val <gpio_num> <0/1>**
   - Set one gpio's direction(not support!)\
     **platform gpio set dir <gpio_num> <0/1>**
-- I2C relative
+- I2C relative\
   Not support!
   
 ### NOTE
