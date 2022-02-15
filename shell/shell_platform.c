@@ -207,10 +207,10 @@ static const char* gpio_get_name(const char *dev_name, int pin_num)
 }
 
 static bool access_check(uint8_t sensor_num) {
-  bool (*access_checker)(uint8_t);
+    bool (*access_checker)(uint8_t);
+    access_checker = sensor_config[SnrNum_SnrCfg_map[sensor_num]].access_checker;
 
-  access_checker = sensor_config[SnrNum_SnrCfg_map[sensor_num]].access_checker;
-  return (access_checker)(sensor_config[SnrNum_SnrCfg_map[sensor_num]].num);
+    return (access_checker)(sensor_config[SnrNum_SnrCfg_map[sensor_num]].num);
 }
 
 static int sensor_get_idx_by_snr_num(uint16_t sensor_num) {
