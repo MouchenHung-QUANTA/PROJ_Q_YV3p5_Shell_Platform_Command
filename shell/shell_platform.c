@@ -4,15 +4,22 @@
     DESCRIPTION: OEM commands including gpio, i2c_slave relative function access.
     AUTHOR: MouchenHung
     DATE/VERSION: 2022.01.11 - v1.0.0
+    CHIP/OS: AST1030 - Zephyr
     Note:
     (1) User command table 
           [topic]               [description]               [support]   [command]
         * GPIO                                              O
-            * List group        List gpios in group         o           platform gpio list_group <gpio_device>
-            * List all          List all gpios              o           platform gpio list_all
-            * Get               Get one gpio                o           platform gpio get <gpio_num>
+            * List group        List gpios' info in group   o           platform gpio list_group <gpio_device>
+            * List all          List all gpios' info        o           platform gpio list_all
+            * Get               Get one gpio info           o           platform gpio get <gpio_num>
             * Set value         Set one gpio value          o           platform gpio set val <gpio_num> <value>
-            * Set direction     Set one gpio direction      x           platform gpio set dir <gpio_num> <value>
+            * Set direction     Set one gpio direction      x           TODO
+        * SENSOR                                            O
+            * List all          List all sensors' info      o           platform sensor list_all
+            * Get               Get one sensor info         o           platform sensor get <sensor_num>
+            * Set polling en    Set one sensor polling      x           TODO
+            * Set mbr           Set one sensor mbr          x           TODO
+            * Set threshold     Set one sensor threshold    x           TODO
         * I2C SLAVE                                         X
 
     (2) Some hard code features need to be modified if CHIP is different
@@ -34,6 +41,9 @@
 #include <drivers/gpio.h>
 #include "plat_gpio.h"
 #include "hal_gpio.h"
+
+/* Include SENSOR */
+#include "sensor.h"
 
 /* Log */
 LOG_MODULE_REGISTER(mc_shell_platform);
@@ -59,6 +69,32 @@ char GPIO_GROUP_NAME_LST[NUM_OF_GROUP][10] = {"GPIO0_A_D", "GPIO0_E_H", "GPIO0_I
 enum GPIO_ACCESS {
     GPIO_READ,
     GPIO_WRITE
+};
+enum SENSOR_ACCESS {
+    SENSOR_READ,
+    SENSOR_WRITE
+};
+
+#define sensor_name_to_num(x) #x,
+const char * const sensor_type_name[] = {
+    sensor_name_to_num(tmp75)
+    sensor_name_to_num(adc)
+    sensor_name_to_num(peci)
+    sensor_name_to_num(vr)
+    sensor_name_to_num(hsc)
+    sensor_name_to_num(nvme)
+    sensor_name_to_num(pch)
+};
+
+const char * const sensor_status_name[] = {
+    sensor_name_to_num(read_success)
+    sensor_name_to_num(read_acur_success)
+    sensor_name_to_num(not_found)
+    sensor_name_to_num(not_accesible)
+    sensor_name_to_num(fail_to_access)
+    sensor_name_to_num(init_status)
+    sensor_name_to_num(unspecified_err)
+    sensor_name_to_num(polling_disable)
 };
 
 /*********************************************************************************************************
@@ -156,7 +192,7 @@ static int gpio_get_group_idx_by_dev_name(const char *dev_name)
 static const char* gpio_get_name(const char *dev_name, int pin_num)
 {
     if (!dev_name)
-        return -1;
+        return NULL;
 
     int name_idx = -1;
     name_idx = pin_num + 32 * gpio_get_group_idx_by_dev_name(dev_name);
@@ -170,6 +206,53 @@ static const char* gpio_get_name(const char *dev_name, int pin_num)
     return gpio_name[name_idx];
 }
 
+static bool access_check(uint8_t sensor_num) {
+  bool (*access_checker)(uint8_t);
+
+  access_checker = sensor_config[SnrNum_SnrCfg_map[sensor_num]].access_checker;
+  return (access_checker)(sensor_config[SnrNum_SnrCfg_map[sensor_num]].num);
+}
+
+static int sensor_get_idx_by_snr_num(uint16_t sensor_num) {
+    for (int sen_idx=0; sen_idx<SDR_NUM; sen_idx++) {
+        if (sensor_num == sensor_config[sen_idx].num)
+            return sen_idx;
+    }
+
+    return -1;
+}
+
+static int sensor_access(const struct shell *shell, int snr_num, enum SENSOR_ACCESS mode) {
+    if (!shell)
+        return 1;
+
+    if (snr_num >= SENSOR_NUM_MAX || snr_num < 0)
+        return 1;
+
+    switch (mode) {
+        /* Get sensor info by "sensor_config" table */
+        case SENSOR_READ:
+            ;
+            int sen_idx = sensor_get_idx_by_snr_num(snr_num);
+            if (sen_idx == -1) {
+                shell_error(shell, "No such sensor number!");
+                return 1;
+            }
+            char *check_access = (access_check(sensor_config[sen_idx].num) == true) ? "O":"X";
+            shell_print(shell, "*SENSOR[0x%-2x]:   TYPE[%-5s]   ACCESS[%s]   STATUS[%-20s]   VAL[%-8d]", sensor_config[sen_idx].num, sensor_type_name[sensor_config[sen_idx].type], check_access, sensor_status_name[sensor_config[sen_idx].cache_status], sensor_config[sen_idx].cache);
+            break;
+
+        case SENSOR_WRITE:
+            /* TODO */
+            break;
+
+        default:
+            break;
+    }
+
+    return 0;
+}
+
 /*********************************************************************************************************
  * COMMAND FUNCTION SECTION
 **********************************************************************************************************/
@@ -179,10 +262,16 @@ static const char* gpio_get_name(const char *dev_name, int pin_num)
 static int cmd_info_print(const struct shell *shell, size_t argc, char **argv)
 {
     shell_print(shell, "========================{SHELL COMMAND INFO}========================");
-    shell_print(shell, "* DESCRIPTION:   Platform command");
+    shell_print(shell, "* NAME:          Platform command");
+    shell_print(shell, "* DESCRIPTION:   Commands that could be used to debug or validate.");
     shell_print(shell, "* AUTHOR:        MouchenHung");
     shell_print(shell, "* DATE/VERSION:  %s - %s", RELEASE_DATE, RELEASE_VERSION);
-    shell_print(shell, "* Note:          You know, I'm Mouchen Hung, the most handsome one!!");
+    shell_print(shell, "* CHIP/OS:       AST1030 - Zephyr");
+    shell_print(shell, "* Note:          1.Support commands status:");
+    shell_print(shell, "                   + GPIO       O");
+    shell_print(shell, "                   + SENSOR     O");
+    shell_print(shell, "                   + I2C_SLAVE  X");
+    shell_print(shell, "                 2.If using these commands in other boards or os may cause problems!");
     shell_print(shell, "========================{SHELL COMMAND INFO}========================");
     return 0;
 }
@@ -204,8 +293,6 @@ static void cmd_gpio_cfg_list_group(const struct shell *shell, size_t argc, char
         shell_error(shell, "Device [%s] not found!", argv[1]);
         return;
     }
-
-    
 
     int g_idx = gpio_get_group_idx_by_dev_name(dev->name);
     int max_group_pin = num_of_pin_in_one_group_lst[g_idx];
@@ -282,10 +369,59 @@ static void cmd_gpio_cfg_set_val(const struct shell *shell, size_t argc, char **
 static void cmd_gpio_cfg_set_dir(const struct shell *shell, size_t argc, char **argv)
 {
     shell_warn(shell, "GPIO set DIR command not support!");
-
     /* TODO */
 
     return;
+}
+
+/*
+    Command SENSOR
+*/
+static void cmd_sensor_cfg_list_all(const struct shell *shell, size_t argc, char **argv)
+{
+    if (argc != 1) {
+        shell_warn(shell, "Try: platform sensor list_all");
+        return;
+    }
+
+    shell_print(shell, "---------------------------------------------------------------------------------");
+    for (int sen_idx=0; sen_idx<SDR_NUM; sen_idx++)
+        sensor_access(shell, sensor_config[sen_idx].num, SENSOR_READ);
+
+    shell_print(shell, "---------------------------------------------------------------------------------");
+}
+
+static void cmd_sensor_cfg_get(const struct shell *shell, size_t argc, char **argv)
+{
+    if (argc != 2) {
+        shell_warn(shell, "Try: platform sensor get <sensor_num>");
+        return;
+    }
+
+    int sen_num = strtol(argv[1], NULL, 16);
+
+    sensor_access(shell, sen_num, SENSOR_READ);
+}
+
+static void cmd_sensor_cfg_set_polling(const struct shell *shell, size_t argc, char **argv)
+{
+    if (argc != 3) {
+        shell_warn(shell, "Try: platform sensor set polling <sensor_num> <enable/disable>");
+        return;
+    }
+    /* TODO */
+}
+
+static void cmd_sensor_cfg_set_mbr(const struct shell *shell, size_t argc, char **argv)
+{
+    shell_warn(shell, "Set sensor MBR is not support!");
+    /* TODO */
+}
+
+static void cmd_sensor_cfg_set_threshold(const struct shell *shell, size_t argc, char **argv)
+{
+    shell_warn(shell, "Set sensor THRESHOLD is not support!");
+    /* TODO */
 }
 
 /* 
@@ -323,17 +459,36 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_gpio_cmds,
     SHELL_SUBCMD_SET_END
 );
 
+/* Sensor sub command */
+SHELL_STATIC_SUBCMD_SET_CREATE(sub_sensor_set_cmds,
+    SHELL_CMD(polling, NULL, "Set sensor polling enable/disable.", cmd_sensor_cfg_set_polling),
+    SHELL_CMD(mbr, NULL, "Set sensor MBR.", cmd_sensor_cfg_set_mbr),
+    SHELL_CMD(threshold, NULL, "Set sensor THRESHOLD.", cmd_sensor_cfg_set_threshold),
+    SHELL_SUBCMD_SET_END
+);
+
+SHELL_STATIC_SUBCMD_SET_CREATE(sub_sensor_cmds,
+    SHELL_CMD(list_all, &gpio_device_name, "List all GPIO config from certain group.", cmd_sensor_cfg_list_all),
+    SHELL_CMD(get, NULL, "Get SENSOR config", cmd_sensor_cfg_get),
+    SHELL_CMD(set, &sub_sensor_set_cmds, "Set SENSOR certain config", NULL),
+    SHELL_SUBCMD_SET_END
+);
+
 /* I2C slave sub command */
 // TODO
 
+/* MAIN command */
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_platform_cmds,
-                    SHELL_CMD(note, NULL,
-                        "Note list.", cmd_info_print),
-                    
-                    SHELL_CMD(gpio, &sub_gpio_cmds,
-                        "GPIO relative command.", NULL),
+    SHELL_CMD(note, NULL,
+        "Note list.", cmd_info_print),
 
-                       SHELL_SUBCMD_SET_END
-                   );
+    SHELL_CMD(gpio, &sub_gpio_cmds,
+        "GPIO relative command.", NULL),
+
+    SHELL_CMD(sensor, &sub_sensor_cmds,
+        "SENSOR relative command.", NULL),
+
+    SHELL_SUBCMD_SET_END
+);
 
 SHELL_CMD_REGISTER(platform, &sub_platform_cmds, "Platform commands", NULL);
