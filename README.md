@@ -19,8 +19,15 @@ Platform command with zephyr
     
   - Set one gpio's direction(not support!)\
     **platform gpio set dir <gpio_num> <0/1>**
-    
+
+- SENSOR relative
+  - Get all sensors' info\
+    **platform sensor list_all**
+  
+  - Get one sensor info\
+    **platform sensor get <sensor_num>**
+
 - I2C relative\
   Not support!
-  
+
 ### NOTE
