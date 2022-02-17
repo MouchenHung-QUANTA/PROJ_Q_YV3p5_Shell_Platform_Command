@@ -2,7 +2,7 @@
 Platform command with zephyr
 ### USAGE
 - GPIO relative
-  - Get all gpios' info\
+  - Get all gpios' info if enable\
     **platform gpio list_all**\
     ![alt text](./img/GPIO_listall.png "gpio list all")
     
