@@ -141,13 +141,16 @@ static int gpio_access_cfg(const struct shell *shell, int gpio_idx, enum GPIO_AC
         return 1;
 
     /* check whether reserve pin defined in pin NAME */
+    /*
     if ( !strncmp(GPIO_RESERVE_PREFIX, gpio_name[gpio_idx], 7) )
         return 1;
-
+    */
     switch (mode)
     {
     case GPIO_READ:
-        ;
+        if ( gpio_cfg[gpio_idx].is_init == DISABLE )
+            return 1;
+
         uint32_t g_val = *(uint32_t *)(GPIO_GROUP_REG_ACCESS[gpio_idx/32]);
         uint32_t g_dir = *(uint32_t *)(GPIO_GROUP_REG_ACCESS[gpio_idx/32]+0x4);
 
