@@ -46,21 +46,23 @@
 #include "sensor.h"
 
 /* Log */
-LOG_MODULE_REGISTER(mc_shell_platform);
+LOG_MODULE_REGISTER(shell_platform);
 
 /* Code info */
 #define RELEASE_VERSION "v1.0.0"
 #define RELEASE_DATE "2022.01.11"
 
 /* HARDCODE - GPIO */
+#define GET_BIT_VAL(val, n) ( (val&BIT(n))>>n )
 #define PINMASK_RESERVE_CHECK 1
 #define GPIO_DEVICE_PREFIX "GPIO0_"
 #define GPIO_RESERVE_PREFIX "Reserve"
 #define NUM_OF_GROUP 6
 #define NUM_OF_GPIO_IS_DEFINE 167
-
+#define GPIO_REG_BASE 0x7e780000
 int num_of_pin_in_one_group_lst[NUM_OF_GROUP] = {32, 32, 32, 32, 32, 16};
 char GPIO_GROUP_NAME_LST[NUM_OF_GROUP][10] = {"GPIO0_A_D", "GPIO0_E_H", "GPIO0_I_L", "GPIO0_M_P", "GPIO0_Q_T", "GPIO0_U_V"};
+uint32_t GPIO_GROUP_REG_ACCESS[NUM_OF_GROUP] = {GPIO_REG_BASE, GPIO_REG_BASE+0x20, GPIO_REG_BASE+0x70, GPIO_REG_BASE+0x78, GPIO_REG_BASE+0x80, GPIO_REG_BASE+0x88};
 
 /* HARDCODE - I2C SLAVE */
 //TODO
@@ -142,16 +144,27 @@ static int gpio_access_cfg(const struct shell *shell, int gpio_idx, enum GPIO_AC
     if ( !strncmp(GPIO_RESERVE_PREFIX, gpio_name[gpio_idx], 7) )
         return 1;
 
-    char *pin_dir = (gpio_cfg[gpio_idx].direction == GPIO_INPUT) ? "input":"output";
-    int val = gpio_get(gpio_idx);
-
     switch (mode)
     {
     case GPIO_READ:
+        ;
+        uint32_t g_val = *(uint32_t *)(GPIO_GROUP_REG_ACCESS[gpio_idx/32]);
+        uint32_t g_dir = *(uint32_t *)(GPIO_GROUP_REG_ACCESS[gpio_idx/32]+0x4);
+
+        char *pin_prop = (gpio_cfg[gpio_idx].property == OPEN_DRAIN) ? "OD":"PP";
+        char *pin_dir = (gpio_cfg[gpio_idx].direction == GPIO_INPUT) ? "input":"output";
+
+        char *pin_dir_reg = "I";
+        if ( g_dir & BIT(gpio_idx%32) )
+            pin_dir_reg = "O";
+
+        int val = gpio_get(gpio_idx);
         if (val == 0 || val == 1)
-            shell_print(shell, "[%-3d] %-35s: %-6s | %d", gpio_idx, gpio_name[gpio_idx], pin_dir, val);
+            shell_print(shell, "[%-3d] %-35s: %-3s | %-6s(%s) | %d(%d)",
+                gpio_idx, gpio_name[gpio_idx], pin_prop, pin_dir, pin_dir_reg, val, GET_BIT_VAL(g_val, gpio_idx%32));
         else
-            shell_print(shell, "[%-3d] %-35s: %-6s | %s", gpio_idx, gpio_name[gpio_idx], pin_dir, "resv");
+            shell_print(shell, "[%-3d] %-35s: %-3s | %-6s(%s) | %s",
+                gpio_idx, gpio_name[gpio_idx], pin_prop, pin_dir, pin_dir_reg, "resv");
         
         break;
 
@@ -239,7 +252,12 @@ static int sensor_access(const struct shell *shell, int snr_num, enum SENSOR_ACC
                 return 1;
             }
             char *check_access = (access_check(sensor_config[sen_idx].num) == true) ? "O":"X";
-            shell_print(shell, "*SENSOR[0x%-2x]:   TYPE[%-5s]   ACCESS[%s]   STATUS[%-20s]   VAL[%-8d]", sensor_config[sen_idx].num, sensor_type_name[sensor_config[sen_idx].type], check_access, sensor_status_name[sensor_config[sen_idx].cache_status], sensor_config[sen_idx].cache);
+            shell_print(shell, "*SENSOR[0x%-2x]:   TYPE[%-5s]   ACCESS[%s]   STATUS[%-20s]   VAL[%-8d]",
+                sensor_config[sen_idx].num,
+                sensor_type_name[sensor_config[sen_idx].type],
+                check_access,
+                sensor_status_name[sensor_config[sen_idx].cache_status],
+                sensor_config[sen_idx].cache);
             break;
 
         case SENSOR_WRITE:
@@ -261,7 +279,7 @@ static int sensor_access(const struct shell *shell, int snr_num, enum SENSOR_ACC
 */
 static int cmd_info_print(const struct shell *shell, size_t argc, char **argv)
 {
-    shell_print(shell, "========================{SHELL COMMAND INFO}========================");
+    shell_print(shell, "========================{SHELL COMMAND INFO}========================================");
     shell_print(shell, "* NAME:          Platform command");
     shell_print(shell, "* DESCRIPTION:   Commands that could be used to debug or validate.");
     shell_print(shell, "* AUTHOR:        MouchenHung");
@@ -272,7 +290,7 @@ static int cmd_info_print(const struct shell *shell, size_t argc, char **argv)
     shell_print(shell, "                   + SENSOR     O");
     shell_print(shell, "                   + I2C_SLAVE  X");
     shell_print(shell, "                 2.If using these commands in other boards or os may cause problems!");
-    shell_print(shell, "========================{SHELL COMMAND INFO}========================");
+    shell_print(shell, "========================{SHELL COMMAND INFO}========================================");
     return 0;
 }
 
@@ -296,25 +314,45 @@ static void cmd_gpio_cfg_list_group(const struct shell *shell, size_t argc, char
 
     int g_idx = gpio_get_group_idx_by_dev_name(dev->name);
     int max_group_pin = num_of_pin_in_one_group_lst[g_idx];
-        
+
+    uint32_t g_val = *(uint32_t *)(GPIO_GROUP_REG_ACCESS[g_idx]);
+    uint32_t g_dir = *(uint32_t *)(GPIO_GROUP_REG_ACCESS[g_idx]+0x4);
+
     int rc;
     for (int index=0; index<max_group_pin; index++) {
+        if ( gpio_cfg[g_idx * 32 + index].is_init == DISABLE ) {
+            shell_print(shell, "[%-3d][%s %-3d] %-35s: -- | %-9s | NA",
+                g_idx*32+index, dev->name, index, "gpio_disable", "i/o");
+            continue;
+        }
+
 #if PINMASK_RESERVE_CHECK
         /* avoid pin_mask from devicetree "gpio-reserved" */
         if (gpio_check_reserve(dev, index, CHECK_BY_GROUP_IDX)) {
-            shell_print(shell, "[%-3d] %-35s: %s | <none>", index, "gpio_reserve", "i/o");
+            shell_print(shell, "[%-3d][%s %-3d] %-35s: -- | %-9s | NA",
+                g_idx*32+index, dev->name, index, "gpio_reserve", "i/o");
             continue;
         }
 #endif
         char *pin_dir = "output";
         if ( gpio_cfg[g_idx * 32 + index].direction == GPIO_INPUT )
             pin_dir = "input";
-            
+
+        char *pin_dir_reg = "I";
+        if ( g_dir & BIT(index) )
+            pin_dir_reg = "O";
+
+        char *pin_prop = (gpio_cfg[g_idx * 32 + index].property == OPEN_DRAIN) ? "OD":"PP";
+
         rc = gpio_pin_get(dev, index);
         if (rc >= 0) {
-            shell_print(shell, "[%-3d] %-35s: %-6s | %d", index, gpio_get_name(dev->name, index), pin_dir, rc);
+            shell_print(shell, "[%-3d][%s %-3d] %-35s: %2s | %-6s(%s) | %d(%d)",
+                g_idx*32+index, dev->name, index, gpio_get_name(dev->name, index),
+                pin_prop, pin_dir, pin_dir_reg, rc, GET_BIT_VAL(g_val, index) );
         } else {
-            shell_error(shell, "[%-3d] %-35s: %-6s | err[%d]", index, gpio_get_name(dev->name, index), pin_dir, rc);
+            shell_error(shell, "[%-3d][%s %-3d] %-35s: %2s | %-6s | err[%d]",
+                g_idx*32+index, dev->name, index, gpio_get_name(dev->name, index),
+                pin_prop, pin_dir, rc);
         }
     }
 
