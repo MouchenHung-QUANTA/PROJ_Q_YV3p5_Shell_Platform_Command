@@ -1,7 +1,7 @@
 /*
     NAME: PLATFORM COMMAND
     FILE: shell_platform.c
-    DESCRIPTION: OEM commands including gpio, i2c_slave relative function access.
+    DESCRIPTION: OEM commands including gpio, sensor relative function access.
     AUTHOR: MouchenHung
     DATE/VERSION: 2022.01.11 - v1.0.0
     CHIP/OS: AST1030 - Zephyr
@@ -11,6 +11,7 @@
         * GPIO                                              O
             * List group        List gpios' info in group   o           platform gpio list_group <gpio_device>
             * List all          List all gpios' info        o           platform gpio list_all
+            * List multifnctl   List multi-fn-ctl regs      o           platform gpio multifnctl
             * Get               Get one gpio info           o           platform gpio get <gpio_num>
             * Set value         Set one gpio value          o           platform gpio set val <gpio_num> <value>
             * Set direction     Set one gpio direction      x           TODO
@@ -45,39 +46,55 @@
 /* Include SENSOR */
 #include "sensor.h"
 
-/* Log */
+/* Declare Log */
 LOG_MODULE_REGISTER(shell_platform);
 
-/* Code info */
+/* Declare Code info */
 #define RELEASE_VERSION "v1.0.0"
 #define RELEASE_DATE "2022.01.11"
 
-/* HARDCODE - GPIO */
-#define GET_BIT_VAL(val, n) ( (val&BIT(n))>>n )
+/* Declare Common */
+#define sensor_name_to_num(x) #x,
+#define GET_BIT_VAL(val, n) ( (val&BIT(n))>>(n) )
+
+/* Declare GPIO */
 #define PINMASK_RESERVE_CHECK 1
 #define GPIO_DEVICE_PREFIX "GPIO0_"
 #define GPIO_RESERVE_PREFIX "Reserve"
 #define NUM_OF_GROUP 6
 #define NUM_OF_GPIO_IS_DEFINE 167
-#define GPIO_REG_BASE 0x7e780000
+#define REG_GPIO_BASE 0x7e780000
+#define REG_SCU 0x7E6E2000
+
 int num_of_pin_in_one_group_lst[NUM_OF_GROUP] = {32, 32, 32, 32, 32, 16};
 char GPIO_GROUP_NAME_LST[NUM_OF_GROUP][10] = {"GPIO0_A_D", "GPIO0_E_H", "GPIO0_I_L", "GPIO0_M_P", "GPIO0_Q_T", "GPIO0_U_V"};
-uint32_t GPIO_GROUP_REG_ACCESS[NUM_OF_GROUP] = {GPIO_REG_BASE, GPIO_REG_BASE+0x20, GPIO_REG_BASE+0x70, GPIO_REG_BASE+0x78, GPIO_REG_BASE+0x80, GPIO_REG_BASE+0x88};
 
-/* HARDCODE - I2C SLAVE */
-//TODO
+uint32_t GPIO_GROUP_REG_ACCESS[NUM_OF_GROUP] = {
+    REG_GPIO_BASE+0x00,
+    REG_GPIO_BASE+0x20,
+    REG_GPIO_BASE+0x70,
+    REG_GPIO_BASE+0x78,
+    REG_GPIO_BASE+0x80,
+    REG_GPIO_BASE+0x88
+};
 
-/* others */
+uint32_t GPIO_MULTI_FUNC_PIN_CTL_REG_ACCESS[] = {
+    REG_SCU+0x410,
+    REG_SCU+0x414,
+    REG_SCU+0x418,
+    REG_SCU+0x41C,
+    REG_SCU+0x430,
+    REG_SCU+0x434,
+    REG_SCU+0x510,
+    REG_SCU+0x51C,
+};
+
 enum GPIO_ACCESS {
     GPIO_READ,
     GPIO_WRITE
 };
-enum SENSOR_ACCESS {
-    SENSOR_READ,
-    SENSOR_WRITE
-};
 
-#define sensor_name_to_num(x) #x,
+/* Declare GPIO */
 const char * const sensor_type_name[] = {
     sensor_name_to_num(tmp75)
     sensor_name_to_num(adc)
@@ -97,6 +114,11 @@ const char * const sensor_status_name[] = {
     sensor_name_to_num(init_status)
     sensor_name_to_num(unspecified_err)
     sensor_name_to_num(polling_disable)
+};
+
+enum SENSOR_ACCESS {
+    SENSOR_READ,
+    SENSOR_WRITE
 };
 
 /*********************************************************************************************************
@@ -151,8 +173,8 @@ static int gpio_access_cfg(const struct shell *shell, int gpio_idx, enum GPIO_AC
         if ( gpio_cfg[gpio_idx].is_init == DISABLE )
             return 1;
 
-        uint32_t g_val = *(uint32_t *)(GPIO_GROUP_REG_ACCESS[gpio_idx/32]);
-        uint32_t g_dir = *(uint32_t *)(GPIO_GROUP_REG_ACCESS[gpio_idx/32]+0x4);
+        uint32_t g_val = sys_read32(GPIO_GROUP_REG_ACCESS[gpio_idx/32]);
+        uint32_t g_dir = sys_read32(GPIO_GROUP_REG_ACCESS[gpio_idx/32]+0x4);
 
         char *pin_prop = (gpio_cfg[gpio_idx].property == OPEN_DRAIN) ? "OD":"PP";
         char *pin_dir = (gpio_cfg[gpio_idx].direction == GPIO_INPUT) ? "input":"output";
@@ -318,8 +340,8 @@ static void cmd_gpio_cfg_list_group(const struct shell *shell, size_t argc, char
     int g_idx = gpio_get_group_idx_by_dev_name(dev->name);
     int max_group_pin = num_of_pin_in_one_group_lst[g_idx];
 
-    uint32_t g_val = *(uint32_t *)(GPIO_GROUP_REG_ACCESS[g_idx]);
-    uint32_t g_dir = *(uint32_t *)(GPIO_GROUP_REG_ACCESS[g_idx]+0x4);
+    uint32_t g_val = sys_read32(GPIO_GROUP_REG_ACCESS[g_idx]);
+    uint32_t g_dir = sys_read32(GPIO_GROUP_REG_ACCESS[g_idx]+0x4);
 
     int rc;
     for (int index=0; index<max_group_pin; index++) {
@@ -415,6 +437,30 @@ static void cmd_gpio_cfg_set_dir(const struct shell *shell, size_t argc, char **
     return;
 }
 
+static void cmd_gpio_muti_fn_ctl_list(const struct shell *shell, size_t argc, char **argv)
+{
+    if (argc != 1) {
+        shell_warn(shell, "Try: platform gpio multifnctl");
+        return;
+    }
+
+    printf("[   REG    ]  hi                                      lo\n");
+    for (int lst_idx=0; lst_idx<ARRAY_SIZE(GPIO_MULTI_FUNC_PIN_CTL_REG_ACCESS); lst_idx++) {
+        uint32_t cur_status = sys_read32(GPIO_MULTI_FUNC_PIN_CTL_REG_ACCESS[lst_idx]);
+        printf("[0x%x]", GPIO_MULTI_FUNC_PIN_CTL_REG_ACCESS[lst_idx]);
+        for (int i=32; i>0; i--) {
+            if (!(i%4))
+                printf(" ");
+            if (!(i%8))
+                printf(" ");
+            printf("%d", (int)GET_BIT_VAL(cur_status, i-1));
+        }
+        printf("\n");
+    }
+    
+    shell_print(shell, "\n");
+}
+
 /*
     Command SENSOR
 */
@@ -497,6 +543,7 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_gpio_cmds,
     SHELL_CMD(list_all, NULL, "List all GPIO config.", cmd_gpio_cfg_list_all),
     SHELL_CMD(get, NULL, "Get GPIO config", cmd_gpio_cfg_get),
     SHELL_CMD(set, &sub_gpio_set_cmds, "Set certain GPIO config", NULL),
+    SHELL_CMD(multifnctl, NULL, "List all GPIO multi-function control regs list.", cmd_gpio_muti_fn_ctl_list),
     SHELL_SUBCMD_SET_END
 );
 
@@ -509,7 +556,7 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_sensor_set_cmds,
 );
 
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_sensor_cmds,
-    SHELL_CMD(list_all, &gpio_device_name, "List all GPIO config from certain group.", cmd_sensor_cfg_list_all),
+    SHELL_CMD(list_all, &gpio_device_name, "List all SENSOR config.", cmd_sensor_cfg_list_all),
     SHELL_CMD(get, NULL, "Get SENSOR config", cmd_sensor_cfg_get),
     SHELL_CMD(set, &sub_sensor_set_cmds, "Set SENSOR certain config", NULL),
     SHELL_SUBCMD_SET_END
